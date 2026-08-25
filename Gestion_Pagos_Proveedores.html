@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gestión de Pagos · Proveedores</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --bg:#F6F7F9; --surface:#fff; --ink:#1B2430; --muted:#6B7686; --line:#E4E8EE;
+    --green:#2E8B57; --gold:#D89A26; --orange:#CC6B2C; --red:#B5352A; --teal:#1F7A8C;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:var(--sans);background:var(--bg);color:var(--ink);font-size:14px}
+  header{background:var(--surface);border-bottom:1px solid var(--line);padding:16px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
+  header h1{font-size:17px;margin:0;font-weight:700}
+  header h1 span{color:var(--muted);font-weight:400}
+  .tabs{display:flex;gap:4px}
+  .tab{padding:8px 16px;border-radius:8px;cursor:pointer;font-weight:600;color:var(--muted);border:1px solid transparent}
+  .tab.active{background:var(--ink);color:#fff}
+  .tab .badge{background:var(--teal);color:#fff;border-radius:20px;padding:1px 7px;font-size:11px;margin-left:6px}
+  .tab.active .badge{background:rgba(255,255,255,.25)}
+  main{max-width:1200px;margin:0 auto;padding:24px}
+  .pane{display:none}
+  .pane.active{display:block}
+
+  .drop{border:2px dashed var(--line);border-radius:12px;background:var(--surface);padding:22px;display:flex;align-items:center;gap:14px;cursor:pointer;margin-bottom:20px;transition:.15s}
+  .drop:hover,.drop.drag{border-color:var(--teal);background:#F0F8FA}
+  .drop.loaded{border-style:solid;border-color:var(--green);cursor:default}
+  .dropInner{display:flex;align-items:center;gap:14px;flex:1;min-width:0}
+  .drop .ic{width:26px;height:26px;color:var(--muted);flex:none}
+  .drop.loaded .ic{color:var(--green)}
+  .drop .fname{font-weight:700}
+  .drop .meta{color:var(--muted)}
+  #replaceBtn{flex:none}
+  .err{display:none;background:#FDECEA;color:var(--red);border:1px solid #F5C2BE;border-radius:8px;padding:10px 14px;margin-bottom:16px;white-space:pre-line;font-size:13px}
+  .err.show{display:block}
+
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+  .kpi{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .kpi .l{color:var(--muted);font-size:12px;margin-bottom:4px}
+  .kpi .n{font-size:22px;font-weight:800}
+  .kpi .n.red{color:var(--red)} .kpi .n.gold{color:var(--gold)} .kpi .n.teal{color:var(--teal)}
+
+  .agingCard{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:20px}
+  .agingBar{height:10px;border-radius:20px;overflow:hidden;display:flex;background:#EEF1F5;margin-bottom:10px}
+  .agingBar span{display:block;height:100%}
+  .agingLeg{display:flex;gap:18px;flex-wrap:wrap;font-size:12.5px;color:var(--muted)}
+  .agingLeg .it{display:flex;align-items:center;gap:6px}
+  .agingLeg .sw{width:9px;height:9px;border-radius:50%;display:inline-block}
+  .agingLeg b{color:var(--ink)}
+
+  .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+  .toolbar input[type=text],.toolbar select{font-family:var(--sans);font-size:13px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--surface)}
+  .toolbar input[type=text]{flex:1;min-width:200px}
+  .toolbar .count{color:var(--muted);font-size:12.5px;margin-left:auto}
+
+  .msel{position:relative}
+  .mselBtn{font-family:var(--sans);font-size:13px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--surface);cursor:pointer;display:flex;align-items:center;gap:6px;color:var(--ink)}
+  .mselBtn:hover{border-color:var(--teal)}
+  .mselBadge{background:var(--teal);color:#fff;border-radius:20px;padding:1px 7px;font-size:11px;display:none}
+  .mselBadge.show{display:inline-block}
+  .mselMenu{display:none;position:absolute;top:calc(100% + 4px);left:0;background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.1);padding:6px;min-width:210px;max-height:280px;overflow:auto;z-index:20}
+  .msel.open .mselMenu{display:block}
+  .mselMenu label{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;font-size:13px;cursor:pointer;white-space:nowrap}
+  .mselMenu label:hover{background:#F0F8FA}
+  .mselMenu input[type=checkbox]{margin:0}
+  .mselActions{display:flex;gap:12px;padding:2px 8px 8px;border-bottom:1px solid var(--line);margin-bottom:4px}
+  .mselActions button{font-family:var(--sans);font-size:11.5px;background:none;border:none;color:var(--teal);cursor:pointer;font-weight:700;padding:0}
+  .mselEmpty{color:var(--muted);font-size:12.5px;padding:6px 8px}
+
+  .tbl{background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  table{width:100%;border-collapse:collapse}
+  thead th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);padding:10px 12px;border-bottom:1px solid var(--line);background:#FAFBFC;cursor:pointer;user-select:none;white-space:nowrap}
+  thead th:hover{color:var(--ink)}
+  tbody td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+  tbody tr:last-child td{border-bottom:none}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  td.rs{font-weight:600}
+  td.cur{color:var(--muted);font-size:11px}
+  .empty{text-align:center;color:var(--muted);padding:30px}
+
+  tr.groupRow td{background:#F2F4F7;padding:9px 12px;border-bottom:1px solid var(--line);font-size:12.5px}
+  tr.groupRow{cursor:pointer}
+  tr.groupRow:hover td{background:#EAEDF2}
+  tr.groupRow .groupName{font-weight:800;text-transform:uppercase;letter-spacing:.02em;font-size:11.5px;color:var(--ink)}
+  tr.groupRow .groupMeta{color:var(--muted);margin-left:10px}
+  .groupCaret{margin-right:8px}
+  .groupBrk{display:inline-flex;gap:6px;flex-wrap:wrap;margin-left:16px;vertical-align:middle}
+  .groupBrk .pill{font-size:10.5px;padding:2px 8px;font-weight:600}
+  .detailSub{display:flex;gap:6px;flex-wrap:wrap;padding:10px 20px 0}
+  .detailSub .pill{font-size:10.5px;padding:2px 8px;font-weight:600}
+
+  .pill{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:700;color:#fff}
+  .pill.b0{background:var(--green)} .pill.b1{background:var(--gold)} .pill.b2{background:var(--orange)} .pill.b3{background:var(--red)}
+  .pill.usd{background:var(--teal)}
+
+  .btn{font-family:var(--sans);font-size:12.5px;font-weight:700;border:none;border-radius:7px;padding:6px 12px;cursor:pointer}
+  .btn.gest{background:var(--teal);color:#fff}
+  .btn.gest:hover{filter:brightness(1.1)}
+  .btn.ingest{background:#EAF6F0;color:var(--green);cursor:default}
+  .btn.ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
+  .btn.ghost:hover{color:var(--red);border-color:var(--red)}
+  .btn.out{background:var(--ink);color:#fff}
+  .btn.out:hover{filter:brightness(1.15)}
+
+  .caret{cursor:pointer;color:var(--muted);display:inline-block;width:14px}
+  tr.detail td{background:#FAFBFC;padding:0}
+  tr.detail .inner{padding:10px 20px}
+  tr.detail table{background:transparent}
+  tr.detail th,tr.detail td{padding:6px 10px;font-size:12.5px}
+  tr.detail thead th{background:transparent}
+  tr.flag td{background:#FFF9EC}
+
+  .prog{height:7px;background:#E9EDF3;border-radius:20px;overflow:hidden;min-width:60px}
+  .prog span{display:block;height:100%;background:var(--green);border-radius:20px}
+  select.estado{font-family:var(--sans);font-size:12.5px;border:1px solid var(--line);border-radius:7px;padding:5px 7px;background:var(--surface);color:var(--ink);max-width:150px}
+  input.notas{font-family:var(--sans);font-size:12.5px;border:1px solid var(--line);border-radius:7px;padding:5px 8px;width:100%;min-width:120px}
+
+  .gestHead{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:10px;flex-wrap:wrap}
+  .gestHead .actions{display:flex;gap:8px}
+  .warn{background:#FFF4E0;color:#8A5A00;border:1px solid #F0D28E;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px}
+  .flagdot{color:var(--gold);font-size:11px;font-weight:700;margin-left:6px}
+
+  .ic{width:34px;height:34px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Gestión de Pagos <span>· Proveedores</span></h1>
+  <div class="tabs">
+    <div class="tab active" data-pane="cartera">Cartera</div>
+    <div class="tab" data-pane="gestion">Gestión<span class="badge" id="gBadge">0</span></div>
+  </div>
+</header>
+
+<main>
+
+  <!-- ===================== CARTERA ===================== -->
+  <div class="pane active" id="pane-cartera">
+
+    <div class="drop" id="drop" tabindex="0">
+      <div class="dropInner" id="dropInner">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+        <div><span class="fname">Subí el reporte de deudas a pagar (Tango)</span><br><span class="meta">Arrastrá el .xlsx acá o hacé clic para elegirlo · los proveedores se agrupan automáticamente por Agrupación</span></div>
+      </div>
+      <button type="button" class="btn ghost" id="replaceBtn" style="display:none">Reemplazar archivo</button>
+    </div>
+    <input type="file" id="file" accept=".xlsx,.xls" style="display:none">
+
+    <div class="err" id="err"></div>
+
+    <div id="cartera-body" style="display:none">
+      <div class="kpis" id="kpis"></div>
+
+      <div class="agingCard">
+        <div class="agingBar" id="agingBar"></div>
+        <div class="agingLeg" id="agingLeg"></div>
+      </div>
+
+      <div class="toolbar">
+        <input type="text" id="search" placeholder="Buscar razón social…">
+        <div class="msel" data-key="aging">
+          <button type="button" class="mselBtn" data-key="aging">Vencimiento <span class="mselBadge" id="mselBadge-aging"></span></button>
+          <div class="mselMenu" id="mselMenu-aging"></div>
+        </div>
+        <div class="msel" data-key="agrup">
+          <button type="button" class="mselBtn" data-key="agrup">Agrupación <span class="mselBadge" id="mselBadge-agrup"></span></button>
+          <div class="mselMenu" id="mselMenu-agrup"></div>
+        </div>
+        <select id="fGest">
+          <option value="">En gestión: todos</option>
+          <option value="si">Ya en gestión</option>
+          <option value="no">Sin gestionar</option>
+        </select>
+        <span class="count" id="tcount"></span>
+      </div>
+
+      <div class="tbl">
+        <table>
+          <thead>
+            <tr>
+              <th></th>
+              <th data-k="rs">Proveedor</th>
+              <th data-k="saldo" class="num">Saldo</th>
+              <th data-k="nComp" class="num">Comp.</th>
+              <th data-k="worst">Peor tramo</th>
+              <th data-k="dvmax" class="num">Días máx.</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="cartBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== GESTION ===================== -->
+  <div class="pane" id="pane-gestion">
+    <div class="gestHead">
+      <div style="color:var(--muted);font-size:13px">Casos que pasaron a gestión activa de pago.</div>
+      <div class="actions">
+        <button class="btn out" id="expNuevos">Exportar nuevos (CSV)</button>
+        <button class="btn ghost" id="expTabla">Exportar tabla (CSV)</button>
+        <button class="btn ghost" id="clearExp">Reiniciar exportados</button>
+      </div>
+    </div>
+    <div id="gWarn"></div>
+    <div id="gestion-body"></div>
+  </div>
+
+</main>
+
+<script>
+const LSKEY='ft_gestion_pagos_v1';
+const ESTADOS=['Por gestionar','Contactado','Compromiso de pago','Sin respuesta','Regularizado – revisar','Pagado'];
+const AG=[['0-30','#2E8B57','b0'],['31-60','#D89A26','b1'],['61-90','#CC6B2C','b2'],['+90','#B5352A','b3']];
+const MES={'01-enero':1,'02-febrero':2,'03-marzo':3,'04-abril':4,'05-mayo':5,'06-junio':6,'07-julio':7,'08-agosto':8,'09-septiembre':9,'10-octubre':10,'11-noviembre':11,'12-diciembre':12};
+const HOY=(()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth(),d.getDate());})();
+const $=id=>document.getElementById(id);
+
+let provs={};
+let sortKey='saldo', sortDir=-1;
+let collapsedGrupos=new Set();
+let selAging=new Set(), selAgrup=new Set();
+let state=load();
+
+function load(){ try{const s=JSON.parse(localStorage.getItem(LSKEY)); return s&&s.casos?{casos:s.casos}:{casos:{}};}catch(e){return {casos:{}};} }
+function save(){ try{localStorage.setItem(LSKEY,JSON.stringify(state));}catch(e){} }
+
+const norm=s=>String(s==null?'':s).trim().toLowerCase();
+function monthNum(v){if(v==null)return null;if(typeof v==='number')return v;const n=norm(v);if(MES[n]!=null)return MES[n];const m=n.match(/^(\d{1,2})/);return m?+m[1]:null;}
+function money(x){return '$'+Math.round(x||0).toLocaleString('es-AR');}
+function millones(x){return '$'+((x||0)/1e6).toLocaleString('es-AR',{minimumFractionDigits:1,maximumFractionDigits:1})+'M';}
+function fdate(dt){if(!dt)return '';const d=new Date(dt);return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();}
+function daysBetween(a,b){return Math.round((a-b)/86400000);}
+function bucket(d){return d<=30?'0-30':d<=60?'31-60':d<=90?'61-90':'+90';}
+function agIdx(b){return AG.findIndex(a=>a[0]===b);}
+function findKey(row,...parts){const P=parts.map(norm);return Object.keys(row).find(k=>{const nk=norm(k);return P.every(x=>nk.includes(x));})||null;}
+function findKeyEx(row,parts,excl){const P=parts.map(norm),E=(excl||[]).map(norm);return Object.keys(row).find(k=>{const nk=norm(k);return P.every(x=>nk.includes(x))&&!E.some(x=>nk.includes(x));})||null;}
+function showErr(m){$('err').textContent=m;$('err').classList.add('show');}
+function hideErr(){$('err').classList.remove('show');}
+function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+function parsePagos(rows){
+  if(!rows.length) throw new Error('El reporte está vacío.');
+  const r0=rows[0];
+  const specs=[['Razón social',['razón','social']],['Total pendiente (CTE)',['pendiente','cte']],['AGRUPACION',['agrupacion']],
+    ['Fecha de vencimiento - Año',['vencimiento','año']],['Fecha de vencimiento - Mes',['vencimiento','mes'],['trimestre']],['Fecha de vencimiento - Día',['vencimiento','día'],['semana']]];
+  const falt=specs.filter(s=>!findKeyEx(r0,s[1],s[2]||[])).map(s=>s[0]);
+  if(falt.length) throw new Error('Al reporte le falta'+(falt.length>1?'n':'')+' '+falt.length+' columna'+(falt.length>1?'s':'')+':\n'+falt.map(f=>'  •  '+f).join('\n')+'\n\nVolvé a exportarlo desde Tango con esas columnas.');
+  const kRs=findKey(r0,'razón','social'), kCte=findKeyEx(r0,['pendiente','cte'],[]), kExt=findKeyEx(r0,['pendiente','ext'],[]),
+        kAgr=findKey(r0,'agrupacion'),
+        kY=findKey(r0,'vencimiento','año'),kM=findKeyEx(r0,['vencimiento','mes'],['semana','trimestre']),kD=findKeyEx(r0,['vencimiento','día'],['semana']);
+  const map={};
+  for(const r of rows){
+    const razon=String(r[kRs]||'').trim(); if(!razon) continue;
+    const agr=String(r[kAgr]||'').trim()||'Sin agrupación';
+    const cte=Number(r[kCte])||0, ext=kExt?(Number(r[kExt])||0):0;
+    const moneda=cte!==0?'ARS':(ext!==0?'USD':'ARS');
+    const imp=cte!==0?cte:ext;
+    const key=razon+'‖'+agr;
+    const y=r[kY],mo=monthNum(r[kM]),d=r[kD];
+    const fv=(y&&mo&&d)?new Date(+y,mo-1,+d):null;
+    const dias=fv?Math.max(0,daysBetween(HOY,fv)):0;
+    const b=fv?bucket(dias):'+90';
+    if(!map[key]) map[key]={key,rs:razon,agrupacion:agr,saldo:0,saldoUsd:0,lines:[],dvmax:0,brk:{'0-30':0,'31-60':0,'61-90':0,'+90':0}};
+    const o=map[key];
+    if(moneda==='ARS'){ o.saldo+=imp; o.brk[b]+=imp; } else { o.saldoUsd+=imp; }
+    o.dvmax=Math.max(o.dvmax,dias);
+    o.lines.push({fv,imp,dias,b,moneda});
+  }
+  Object.values(map).forEach(o=>{
+    o.nComp=o.lines.length;
+    o.worst=['+90','61-90','31-60','0-30'].find(b=>o.brk[b]>0)||'0-30';
+    o.lines.sort((a,b)=>b.dias-a.dias);
+  });
+  return map;
+}
+
+function reconcile(){
+  const t=fdate(HOY);
+  Object.values(state.casos).forEach(c=>{ const k=c.key; c.saldoHoy = provs[k] ? provs[k].saldo : 0; c.fechaSaldoHoy=t; });
+  save();
+}
+function kpi(n,l,cls){return `<div class="kpi"><div class="l">${l}</div><div class="n ${cls}">${n}</div></div>`;}
+function selSetFor(key){return key==='aging'?selAging:selAgrup;}
+function updateMselBadge(key){
+  const set=selSetFor(key), b=$('mselBadge-'+key);
+  if(set.size){ b.textContent=set.size; b.classList.add('show'); } else { b.textContent=''; b.classList.remove('show'); }
+}
+function buildMsel(key,opts){
+  const set=selSetFor(key);
+  const menu=$('mselMenu-'+key);
+  const list=opts.length?opts.map(o=>`<label><input type="checkbox" data-msel-key="${key}" value="${esc(o)}" ${set.has(o)?'checked':''}>${esc(o)}</label>`).join(''):`<div class="mselEmpty">Sin opciones</div>`;
+  menu.innerHTML=`<div class="mselActions"><button type="button" data-msel-all="${key}">Todos</button><button type="button" data-msel-none="${key}">Ninguno</button></div>${list}`;
+  updateMselBadge(key);
+}
+function populateFilters(){
+  const arr=Object.values(provs);
+  const agrs=[...new Set(arr.map(c=>c.agrupacion))].sort((a,b)=>a.localeCompare(b,'es'));
+  buildMsel('aging',AG.map(a=>a[0]));
+  buildMsel('agrup',agrs);
+}
+function getFiltered(){
+  const q=norm($('search').value), fg=$('fGest').value;
+  return Object.values(provs).filter(c=>{
+    if(q&&!norm(c.rs).includes(q)) return false;
+    if(selAging.size&&![...selAging].some(b=>c.brk[b]>0)) return false;
+    if(selAgrup.size&&!selAgrup.has(c.agrupacion)) return false;
+    if(fg==='si'&&!state.casos[c.key]) return false;
+    if(fg==='no'&&state.casos[c.key]) return false;
+    return true;
+  });
+}
+function renderTotals(arr){
+  const tot=arr.reduce((s,c)=>s+c.saldo,0);
+  const totUsd=arr.reduce((s,c)=>s+c.saldoUsd,0);
+  const enG=arr.filter(c=>state.casos[c.key]).length;
+  const brk={'0-30':0,'31-60':0,'61-90':0,'+90':0}; arr.forEach(c=>AG.forEach(a=>brk[a[0]]+=c.brk[a[0]]));
+  $('kpis').innerHTML=kpi(millones(tot)+(totUsd?` <span style="font-size:12px;color:var(--muted);font-weight:600">+ USD ${Math.round(totUsd).toLocaleString('es-AR')}</span>`:''),'Total a pagar vencido','red')+kpi(arr.length,'Proveedores con deuda','')+kpi(millones(brk['+90']),'En +90 días','gold')+kpi(enG,'En gestión activa','teal');
+  $('agingBar').innerHTML=AG.map(a=>{const w=tot?brk[a[0]]/tot*100:0;return w>0?`<span style="width:${w}%;background:${a[1]}"></span>`:'';}).join('');
+  $('agingLeg').innerHTML=AG.map(a=>`<div class="it"><span class="sw" style="background:${a[1]}"></span>${a[0]} días · <b>${millones(brk[a[0]])}</b> (${tot?Math.round(brk[a[0]]/tot*100):0}%)</div>`).join('');
+}
+function renderCartera(){
+  renderCartTable();
+}
+function renderCartTable(){
+  let arr=getFiltered();
+  renderTotals(arr);
+  arr.sort((a,b)=>{let x=a[sortKey],y=b[sortKey];if(sortKey==='worst'){x=agIdx(a.worst);y=agIdx(b.worst);}if(typeof x==='string'){return sortDir*x.localeCompare(y);}return sortDir*((x||0)-(y||0));});
+
+  const groups=new Map();
+  arr.forEach(c=>{ if(!groups.has(c.agrupacion)) groups.set(c.agrupacion,[]); groups.get(c.agrupacion).push(c); });
+  const grupNames=[...groups.keys()].sort((a,b)=>{
+    const ta=groups.get(a).reduce((s,c)=>s+c.saldo,0), tb=groups.get(b).reduce((s,c)=>s+c.saldo,0);
+    return tb-ta;
+  });
+
+  $('tcount').textContent=arr.length+' proveedor'+(arr.length!==1?'es':'')+(grupNames.length>1?' · '+grupNames.length+' agrupaciones':'');
+
+  if(!arr.length){ $('cartBody').innerHTML=`<tr><td colspan="7" class="empty">Sin resultados</td></tr>`; return; }
+
+  $('cartBody').innerHTML = grupNames.map(gr=>{
+    const list=groups.get(gr);
+    const subtotal=list.reduce((s,c)=>s+c.saldo,0);
+    const collapsed=collapsedGrupos.has(gr);
+    const vbrk={'0-30':0,'31-60':0,'61-90':0,'+90':0}; list.forEach(c=>AG.forEach(a=>vbrk[a[0]]+=c.brk[a[0]]));
+    const brkHtml=collapsed?'':AG.map(a=>vbrk[a[0]]>0?`<span class="pill b${agIdx(a[0])}">${a[0]}: ${money(vbrk[a[0]])}</span>`:'').join('');
+    const rows=collapsed?'':list.map(c=>{
+      const inG=!!state.casos[c.key], bi=agIdx(c.worst);
+      const btn=inG?`<button class="btn ingest">✓ en gestión</button>`:`<button class="btn gest" data-add="${esc(c.key)}">→ Gestión</button>`;
+      const detSub=AG.map(a=>c.brk[a[0]]>0?`<span class="pill b${agIdx(a[0])}">${a[0]}: ${money(c.brk[a[0]])}</span>`:'').join('')+(c.saldoUsd?`<span class="pill usd">USD ${Math.round(c.saldoUsd).toLocaleString('es-AR')}</span>`:'');
+      const det=c.lines.map(l=>`<tr><td>${l.fv?fdate(l.fv):'—'}</td><td class="num">${l.moneda==='USD'?'US$'+Math.round(l.imp).toLocaleString('es-AR'):money(l.imp)}</td><td class="num">${l.dias}</td><td><span class="pill b${agIdx(l.b)}">${l.b}</span></td></tr>`).join('');
+      return `<tr class="crow"><td><span class="caret" data-toggle="${esc(c.key)}">▶</span></td><td class="rs">${esc(c.rs)}</td><td class="num">${money(c.saldo)}</td><td class="num">${c.nComp}</td><td><span class="pill b${bi}">${c.worst}</span></td><td class="num">${c.dvmax}</td><td>${btn}</td></tr>
+      <tr class="detail" id="det-${esc(c.key)}" style="display:none"><td colspan="7"><div class="inner"><div class="detailSub">${detSub}</div><table><thead><tr><th>Vencimiento</th><th class="num">Importe</th><th class="num">Días</th><th>Aging</th></tr></thead><tbody>${det}</tbody></table></div></td></tr>`;
+    }).join('');
+    return `<tr class="groupRow" data-toggle-group="${esc(gr)}"><td colspan="7"><span class="caret groupCaret">${collapsed?'▶':'▼'}</span><span class="groupName">${esc(gr)}</span><span class="groupMeta">${list.length} proveedor${list.length!==1?'es':''} · ${money(subtotal)}</span><span class="groupBrk">${brkHtml}</span></td></tr>${rows}`;
+  }).join('');
+}
+
+function renderGestion(){
+  const casos=Object.values(state.casos).sort((a,b)=>(b.saldoInicio||0)-(a.saldoInicio||0));
+  $('gBadge').textContent=casos.length;
+  const hayFoto=Object.keys(provs).length>0;
+  $('gWarn').innerHTML = hayFoto ? '' : `<div class="warn">Subí la deuda de hoy en la pestaña "Cartera" para actualizar el progreso de cada caso.</div>`;
+  if(!casos.length){ $('gestion-body').innerHTML=`<div class="empty"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg><div>Todavía no hay casos en gestión.</div><div style="font-size:13px;margin-top:6px">Andá a "Cartera", elegí un proveedor y tocá "→ Gestión".</div></div>`; return; }
+  const body=casos.map(c=>{
+    const key=c.key;
+    const hoy=c.saldoHoy!=null?c.saldoHoy:null;
+    const rec=hoy!=null?(c.saldoInicio-hoy):null;
+    const pct=(rec!=null&&c.saldoInicio>0)?Math.max(0,Math.min(100,rec/c.saldoInicio*100)):0;
+    const sem=Math.max(0,Math.floor(daysBetween(HOY,new Date(c.fechaEntrada))/7));
+    const flag=(hoy===0 && c.estado!=='Pagado' && c.estado!=='Regularizado – revisar');
+    const opts=ESTADOS.map(e=>`<option ${e===c.estado?'selected':''}>${e}</option>`).join('');
+    return `<tr class="${flag?'flag':''}">
+      <td class="rs">${esc(c.rs)} ${flag?'<span class="flagdot" title="Saldo en cero: confirmá si se pagó">● revisar</span>':''}<div class="cur">${c.agrupacion?esc(c.agrupacion)+' · ':''}desde ${fdate(c.fechaEntrada)} · ${sem} sem</div></td>
+      <td class="num">${money(c.saldoInicio)}</td>
+      <td class="num">${hoy!=null?money(hoy):'—'}</td>
+      <td class="num" style="color:var(--green);font-weight:700">${rec!=null?money(rec):'—'}</td>
+      <td style="min-width:110px"><div class="prog"><span style="width:${pct}%"></span></div><div style="font-size:11px;color:var(--muted);margin-top:3px">${Math.round(pct)}%</div></td>
+      <td><select class="estado" data-est="${esc(key)}">${opts}</select></td>
+      <td style="min-width:150px"><input class="notas" data-notas="${esc(key)}" value="${esc(c.notas||'')}" placeholder="nota…"></td>
+      <td><button class="btn ghost" data-rem="${esc(key)}">quitar</button></td></tr>`;
+  }).join('');
+  $('gestion-body').innerHTML=`<div class="tbl"><table><thead><tr><th>Proveedor</th><th class="num">Saldo inicio</th><th class="num">Saldo hoy</th><th class="num">Pagado</th><th>Avance</th><th>Estado</th><th>Notas</th><th></th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+function addGestion(key){
+  const c=provs[key]; if(!c||state.casos[key]) return;
+  state.casos[key]={key,rs:c.rs,agrupacion:c.agrupacion,saldoInicio:c.saldo,saldoHoy:c.saldo,fechaSaldoHoy:fdate(HOY),fechaEntrada:HOY.toISOString(),estado:'Por gestionar',notas:'',exportado:false};
+  save(); renderCartTable(); renderGestion(); renderCartera();
+}
+function removeCaso(key){ if(confirm('¿Quitar este caso de gestión? Se pierde su saldo congelado y su historial en esta herramienta.')){ delete state.casos[key]; save(); renderGestion(); if(Object.keys(provs).length)renderCartera(); } }
+
+function csvCell(v){const s=v==null?'':String(v);return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}
+function download(name,rows){const csv='\ufeff'+rows.map(r=>r.map(csvCell).join(',')).join('\n');const b=new Blob([csv],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click();}
+function expNuevos(){
+  const nuevos=Object.values(state.casos).filter(c=>!c.exportado);
+  if(!nuevos.length){ alert('No hay casos nuevos para exportar. Todos los actuales ya fueron exportados.'); return; }
+  const rows=[['Nombre del caso','Proveedor','Agrupación','Importe','Estado','Fecha de entrada']];
+  nuevos.forEach(c=>rows.push(['Pago - '+c.rs,c.rs,c.agrupacion||'',Math.round(c.saldoInicio*100)/100,c.estado,fdate(c.fechaEntrada)]));
+  download('pagos_nuevos.csv',rows);
+  nuevos.forEach(c=>c.exportado=true); save(); renderGestion();
+  alert(nuevos.length+' caso(s) nuevo(s) exportado(s) y marcados como enviados.');
+}
+function expTabla(){
+  const casos=Object.values(state.casos).sort((a,b)=>(b.saldoInicio||0)-(a.saldoInicio||0));
+  if(!casos.length){ alert('No hay casos en gestión.'); return; }
+  const rows=[['Proveedor','Agrupación','Saldo Inicio','Fecha Entrada','Saldo Hoy','Pagado','% Avance','Semanas','Estado','Notas']];
+  casos.forEach(c=>{const hoy=c.saldoHoy!=null?c.saldoHoy:'';const rec=c.saldoHoy!=null?(c.saldoInicio-c.saldoHoy):'';const pct=(c.saldoHoy!=null&&c.saldoInicio>0)?Math.round((c.saldoInicio-c.saldoHoy)/c.saldoInicio*100):'';const sem=Math.max(0,Math.floor(daysBetween(HOY,new Date(c.fechaEntrada))/7));
+    rows.push([c.rs,c.agrupacion||'',Math.round(c.saldoInicio),fdate(c.fechaEntrada),hoy!==''?Math.round(hoy):'',rec!==''?Math.round(rec):'',pct,sem,c.estado,c.notas||'']);});
+  download('gestion_pagos.csv',rows);
+}
+
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.pane').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active'); $('pane-'+t.dataset.pane).classList.add('active');
+  if(t.dataset.pane==='gestion') renderGestion();
+}));
+['search','fGest'].forEach(id=>$(id).addEventListener('input',renderCartTable));
+document.addEventListener('click',e=>{
+  const btn=e.target.closest('.mselBtn');
+  if(btn){
+    const cont=btn.closest('.msel');
+    const wasOpen=cont.classList.contains('open');
+    document.querySelectorAll('.msel.open').forEach(m=>m.classList.remove('open'));
+    if(!wasOpen) cont.classList.add('open');
+    return;
+  }
+  const all=e.target.closest('[data-msel-all]');
+  if(all){
+    const key=all.dataset.mselAll, set=selSetFor(key);
+    const opts=$('mselMenu-'+key).querySelectorAll('[data-msel-key]');
+    opts.forEach(o=>{ set.add(o.value); o.checked=true; });
+    updateMselBadge(key); renderCartTable(); return;
+  }
+  const none=e.target.closest('[data-msel-none]');
+  if(none){
+    const key=none.dataset.mselNone, set=selSetFor(key);
+    set.clear();
+    $('mselMenu-'+key).querySelectorAll('[data-msel-key]').forEach(o=>o.checked=false);
+    updateMselBadge(key); renderCartTable(); return;
+  }
+  if(!e.target.closest('.msel')) document.querySelectorAll('.msel.open').forEach(m=>m.classList.remove('open'));
+});
+document.addEventListener('change',e=>{
+  const cb=e.target.closest('[data-msel-key]');
+  if(cb){
+    const key=cb.dataset.mselKey, set=selSetFor(key);
+    if(cb.checked) set.add(cb.value); else set.delete(cb.value);
+    updateMselBadge(key); renderCartTable();
+  }
+});
+document.querySelectorAll('thead th[data-k]').forEach(th=>th.addEventListener('click',()=>{
+  const k=th.dataset.k; if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=(k==='rs')?1:-1;} renderCartTable();
+}));
+$('cartBody').addEventListener('click',e=>{
+  const add=e.target.closest('[data-add]'); if(add){addGestion(add.dataset.add);return;}
+  const tog=e.target.closest('[data-toggle]'); if(tog){const d=$('det-'+tog.dataset.toggle);const open=d.style.display!=='none';d.style.display=open?'none':'';tog.textContent=open?'▶':'▼';return;}
+  const gtog=e.target.closest('[data-toggle-group]'); if(gtog){const gr=gtog.dataset.toggleGroup;if(collapsedGrupos.has(gr))collapsedGrupos.delete(gr);else collapsedGrupos.add(gr);renderCartTable();}
+});
+$('gestion-body').addEventListener('change',e=>{const est=e.target.closest('[data-est]');if(est){state.casos[est.dataset.est].estado=est.value;save();renderGestion();}});
+$('gestion-body').addEventListener('input',e=>{const n=e.target.closest('[data-notas]');if(n){state.casos[n.dataset.notas].notas=e.target.value;save();}});
+$('gestion-body').addEventListener('click',e=>{const r=e.target.closest('[data-rem]');if(r)removeCaso(r.dataset.rem);});
+$('expNuevos').addEventListener('click',expNuevos);
+$('expTabla').addEventListener('click',expTabla);
+$('clearExp').addEventListener('click',()=>{if(confirm('Esto vuelve a marcar TODOS los casos como "no exportados", así podés generar de nuevo el CSV completo. ¿Seguir?')){Object.values(state.casos).forEach(c=>c.exportado=false);save();alert('Listo. El próximo "Exportar nuevos" incluirá todos los casos.');}});
+
+const drop=$('drop'),dropInner=$('dropInner'),file=$('file'),replaceBtn=$('replaceBtn');
+function openPicker(){ file.value=''; file.click(); }
+drop.addEventListener('click',e=>{ if(e.target.closest('#replaceBtn')) return; if(!drop.classList.contains('loaded')) openPicker(); });
+drop.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&!drop.classList.contains('loaded')){e.preventDefault();openPicker();}});
+replaceBtn.addEventListener('click',e=>{ e.stopPropagation(); openPicker(); });
+['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('drag');}));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('drag');}));
+drop.addEventListener('drop',e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f)loadFile(f);});
+file.addEventListener('change',e=>{const f=e.target.files[0];if(f)loadFile(f);});
+function loadFile(f){
+  hideErr();
+  const rd=new FileReader();
+  rd.onload=ev=>{
+    try{
+      const wb=XLSX.read(ev.target.result,{type:'array'});
+      const sn=wb.SheetNames.includes('Datos')?'Datos':wb.SheetNames[wb.SheetNames.length-1];
+      const rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{defval:null});
+      provs=parsePagos(rows);
+      if(!Object.keys(provs).length) throw new Error('No se encontraron proveedores en el archivo.');
+      reconcile();
+      selAging=new Set(); selAgrup=new Set();
+      populateFilters();
+      collapsedGrupos=new Set(Object.values(provs).map(c=>c.agrupacion));
+      const nGr=new Set(Object.values(provs).map(c=>c.agrupacion)).size;
+      drop.classList.add('loaded');
+      dropInner.innerHTML=`<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg><div><span class="fname">${esc(f.name)}</span> · <span class="meta">${Object.keys(provs).length} proveedores · ${nGr} agrupaci${nGr!==1?'ones':'ón'} · foto del ${fdate(HOY)}</span></div>`;
+      replaceBtn.style.display='';
+      $('cartera-body').style.display='';
+      renderCartera();
+    }catch(err){ showErr(err.message||'No se pudo leer el archivo.'); }
+  };
+  rd.onerror=()=>showErr('No se pudo abrir el archivo.');
+  rd.readAsArrayBuffer(f);
+}
+
+$('gBadge').textContent=Object.keys(state.casos).length;
+renderGestion();
+</script>
+</body>
+</html>
