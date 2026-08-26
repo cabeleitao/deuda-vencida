@@ -146,14 +146,36 @@
         <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
         <div><span class="fname">Subí el reporte de deudas a pagar (Tango)</span><br><span class="meta">Arrastrá el .xlsx acá o hacé clic para elegirlo · los proveedores se agrupan automáticamente por Agrupación</span></div>
       </div>
+      <button type="button" class="btn out" id="publishBtn" style="display:none">Publicar en GitHub</button>
       <button type="button" class="btn ghost" id="downloadJsonBtn" style="display:none">Descargar data.json</button>
       <button type="button" class="btn ghost" id="replaceBtn" style="display:none">Reemplazar archivo</button>
+      <button type="button" class="btn ghost" id="ghConfigBtn" title="Configurar publicación a GitHub">⚙ GitHub</button>
     </div>
     <input type="file" id="file" accept=".xlsx,.xls" style="display:none">
 
-    <div class="warn" id="publishHint" style="display:none">
-      Para que este link muestre estos datos a cualquiera que lo abra, descargá <b>data.json</b> y reemplazá el archivo con ese nombre en la carpeta del repo de GitHub (arrastrarlo en "Add file → Upload files", igual que hiciste con el HTML). La página lo carga solo, sin pedir el Excel.
+    <div id="ghConfigPanel" style="display:none;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px">
+      <div style="font-weight:700;margin-bottom:4px">Publicar directo a GitHub</div>
+      <div style="color:var(--muted);font-size:12.5px;margin-bottom:12px">
+        Con esto, "Publicar en GitHub" escribe data.json directo en tu repo — sin descargar ni subir nada a mano.
+        El token queda guardado solo en este navegador y viaja directo a GitHub, nunca pasa por otro servidor.
+        Generalo en <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">github.com/settings/tokens</a> (fine-grained, con permiso "Contents: Read and write" restringido a este repo).
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <div><label style="font-size:11.5px;color:var(--muted)">Usuario/organización</label><input type="text" id="ghOwner" placeholder="cabeleitao" style="width:100%;font-family:var(--sans);font-size:13px;border:1px solid var(--line);border-radius:8px;padding:8px 10px"></div>
+        <div><label style="font-size:11.5px;color:var(--muted)">Repositorio</label><input type="text" id="ghRepo" placeholder="pagos-fares-taie" style="width:100%;font-family:var(--sans);font-size:13px;border:1px solid var(--line);border-radius:8px;padding:8px 10px"></div>
+        <div><label style="font-size:11.5px;color:var(--muted)">Rama</label><input type="text" id="ghBranch" placeholder="main" value="main" style="width:100%;font-family:var(--sans);font-size:13px;border:1px solid var(--line);border-radius:8px;padding:8px 10px"></div>
+        <div><label style="font-size:11.5px;color:var(--muted)">Ruta del archivo</label><input type="text" id="ghPath" placeholder="data.json" value="data.json" style="width:100%;font-family:var(--sans);font-size:13px;border:1px solid var(--line);border-radius:8px;padding:8px 10px"></div>
+      </div>
+      <label style="font-size:11.5px;color:var(--muted)">Token de acceso personal (fine-grained)</label>
+      <input type="password" id="ghToken" placeholder="github_pat_..." style="width:100%;font-family:var(--sans);font-size:13px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:10px">
+      <div style="display:flex;gap:8px">
+        <button type="button" class="btn out" id="ghSaveBtn">Guardar</button>
+        <button type="button" class="btn ghost" id="ghForgetBtn">Olvidar token</button>
+      </div>
     </div>
+
+    <div class="warn" id="publishHint" style="display:none"></div>
+
 
     <div class="err" id="err"></div>
 
@@ -475,16 +497,74 @@ $('expNuevos').addEventListener('click',expNuevos);
 $('expTabla').addEventListener('click',expTabla);
 $('clearExp').addEventListener('click',()=>{if(confirm('Esto vuelve a marcar TODOS los casos como "no exportados", así podés generar de nuevo el CSV completo. ¿Seguir?')){Object.values(state.casos).forEach(c=>c.exportado=false);save();alert('Listo. El próximo "Exportar nuevos" incluirá todos los casos.');}});
 
-const drop=$('drop'),dropInner=$('dropInner'),file=$('file'),replaceBtn=$('replaceBtn'),downloadJsonBtn=$('downloadJsonBtn'),publishHint=$('publishHint');
+const drop=$('drop'),dropInner=$('dropInner'),file=$('file'),replaceBtn=$('replaceBtn'),downloadJsonBtn=$('downloadJsonBtn'),publishHint=$('publishHint'),publishBtn=$('publishBtn');
 let rawRows=null;
 function openPicker(){ file.value=''; file.click(); }
-drop.addEventListener('click',e=>{ if(e.target.closest('#replaceBtn,#downloadJsonBtn')) return; if(!drop.classList.contains('loaded')) openPicker(); });
+drop.addEventListener('click',e=>{ if(e.target.closest('#replaceBtn,#downloadJsonBtn,#publishBtn,#ghConfigBtn')) return; if(!drop.classList.contains('loaded')) openPicker(); });
 drop.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&!drop.classList.contains('loaded')){e.preventDefault();openPicker();}});
 replaceBtn.addEventListener('click',e=>{ e.stopPropagation(); openPicker(); });
 ['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('drag');}));
 ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('drag');}));
 drop.addEventListener('drop',e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f)loadFile(f);});
 file.addEventListener('change',e=>{const f=e.target.files[0];if(f)loadFile(f);});
+
+// ---- Configuración de publicación a GitHub (token queda solo en este navegador) ----
+const GHKEY='ft_gh_config_v1';
+function ghLoad(){ try{return JSON.parse(localStorage.getItem(GHKEY))||{};}catch(e){return {};} }
+function ghSave(cfg){ try{localStorage.setItem(GHKEY,JSON.stringify(cfg));}catch(e){} }
+function ghConfigured(){ const c=ghLoad(); return !!(c.owner&&c.repo&&c.branch&&c.path&&c.token); }
+function updatePublishUI(){
+  const ok=ghConfigured();
+  publishBtn.style.display=(ok && rawRows)?'':'none';
+  downloadJsonBtn.style.display=(!ok && rawRows)?'':'none';
+  if(!rawRows){ publishHint.style.display='none'; return; }
+  publishHint.style.display='';
+  publishHint.innerHTML = ok
+    ? 'Tocá <b>"Publicar en GitHub"</b> para que este link muestre estos datos a cualquiera que lo abra.'
+    : 'Configurá la publicación (⚙ GitHub) para poder actualizar el link con un clic, o descargá <b>data.json</b> y subilo manualmente al repo (Add file → Upload files).';
+}
+$('ghConfigBtn').addEventListener('click',e=>{
+  e.stopPropagation();
+  const c=ghLoad();
+  $('ghOwner').value=c.owner||''; $('ghRepo').value=c.repo||''; $('ghBranch').value=c.branch||'main'; $('ghPath').value=c.path||'data.json'; $('ghToken').value=c.token||'';
+  const p=$('ghConfigPanel'); p.style.display=p.style.display==='none'?'':'none';
+});
+$('ghSaveBtn').addEventListener('click',e=>{
+  e.stopPropagation();
+  const cfg={owner:$('ghOwner').value.trim(),repo:$('ghRepo').value.trim(),branch:$('ghBranch').value.trim()||'main',path:$('ghPath').value.trim()||'data.json',token:$('ghToken').value.trim()};
+  if(!cfg.owner||!cfg.repo||!cfg.token){ alert('Completá al menos usuario, repositorio y token.'); return; }
+  ghSave(cfg); $('ghConfigPanel').style.display='none'; updatePublishUI();
+  alert('Guardado. Ya podés usar "Publicar en GitHub".');
+});
+$('ghForgetBtn').addEventListener('click',e=>{
+  e.stopPropagation();
+  if(confirm('¿Olvidar el token guardado en este navegador?')){ localStorage.removeItem(GHKEY); $('ghToken').value=''; updatePublishUI(); }
+});
+
+async function ghPublish(){
+  const c=ghLoad();
+  if(!ghConfigured()||!rawRows) return;
+  publishBtn.disabled=true; publishBtn.textContent='Publicando…';
+  try{
+    const api=`https://api.github.com/repos/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}/contents/${c.path.split('/').map(encodeURIComponent).join('/')}`;
+    let sha=null;
+    const getR=await fetch(`${api}?ref=${encodeURIComponent(c.branch)}`,{headers:{Authorization:`Bearer ${c.token}`,Accept:'application/vnd.github+json'}});
+    if(getR.status===200){ sha=(await getR.json()).sha; }
+    else if(getR.status!==404){ throw new Error('No se pudo leer el estado actual del archivo (status '+getR.status+').'); }
+    const payload={actualizado:new Date().toISOString(),rows:rawRows};
+    const content=btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+    const putBody={message:'Actualización de deudas a pagar — '+fdatetime(payload.actualizado),content,branch:c.branch};
+    if(sha) putBody.sha=sha;
+    const putR=await fetch(api,{method:'PUT',headers:{Authorization:`Bearer ${c.token}`,Accept:'application/vnd.github+json','Content-Type':'application/json'},body:JSON.stringify(putBody)});
+    if(!putR.ok){ const t=await putR.text(); throw new Error('GitHub respondió '+putR.status+': '+t.slice(0,200)); }
+    alert('Publicado. En 1-2 minutos el link va a mostrar estos datos.');
+  }catch(err){
+    alert('No se pudo publicar: '+(err.message||err));
+  }finally{
+    publishBtn.disabled=false; publishBtn.textContent='Publicar en GitHub';
+  }
+}
+publishBtn.addEventListener('click',e=>{ e.stopPropagation(); ghPublish(); });
 
 function applyRows(rows,fname,metaExtra){
   provs=parsePagos(rows);
@@ -498,9 +578,8 @@ function applyRows(rows,fname,metaExtra){
   drop.classList.add('loaded');
   dropInner.innerHTML=`<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg><div><span class="fname">${esc(fname)}</span> · <span class="meta">${Object.keys(provs).length} proveedores · ${nGr} agrupaci${nGr!==1?'ones':'ón'} · ${metaExtra}</span></div>`;
   replaceBtn.style.display='';
-  downloadJsonBtn.style.display='';
-  publishHint.style.display='';
   $('cartera-body').style.display='';
+  updatePublishUI();
   renderCartera();
 }
 
