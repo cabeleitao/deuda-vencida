@@ -34,6 +34,8 @@
   .drop .fname{font-weight:700}
   .drop .meta{color:var(--muted)}
   #replaceBtn,#downloadJsonBtn{flex:none}
+  .cfgItem{display:block;width:100%;text-align:left;background:none;border:none;font-family:var(--sans);font-size:13px;color:var(--ink);padding:8px 12px;cursor:pointer;border-radius:6px}
+  .cfgItem:hover{background:#F0F8FA}
   .err{display:none;background:#FDECEA;color:var(--red);border:1px solid #F5C2BE;border-radius:8px;padding:10px 14px;margin-bottom:16px;white-space:pre-line;font-size:13px}
   .err.show{display:block}
 
@@ -146,17 +148,22 @@
         <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
         <div><span class="fname">Subí el reporte de deudas a pagar (Tango)</span><br><span class="meta">Arrastrá el .xlsx acá o hacé clic para elegirlo · los proveedores se agrupan automáticamente por Agrupación</span></div>
       </div>
-      <button type="button" class="btn out" id="publishBtn" style="display:none">Publicar en GitHub</button>
-      <button type="button" class="btn ghost" id="downloadJsonBtn" style="display:none">Descargar data.json</button>
-      <button type="button" class="btn ghost" id="replaceBtn" style="display:none">Reemplazar archivo</button>
-      <button type="button" class="btn ghost" id="ghConfigBtn" title="Configurar publicación a GitHub">⚙ GitHub</button>
+      <button type="button" class="btn out" id="publishBtn" style="display:none">Actualizar</button>
+      <div class="msel" id="cfgMenuWrap">
+        <button type="button" class="btn ghost mselBtn" id="cfgMenuBtn" title="Configuración">⚙ Configuración</button>
+        <div class="mselMenu" id="cfgMenu" style="min-width:200px;padding:6px 0">
+          <button type="button" class="cfgItem" id="replaceBtn">Reemplazar archivo</button>
+          <button type="button" class="cfgItem" id="downloadJsonBtn">Descargar data.json</button>
+          <button type="button" class="cfgItem" id="ghConfigBtn">Configurar publicación (GitHub)</button>
+        </div>
+      </div>
     </div>
     <input type="file" id="file" accept=".xlsx,.xls" style="display:none">
 
     <div id="ghConfigPanel" style="display:none;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px">
       <div style="font-weight:700;margin-bottom:4px">Publicar directo a GitHub</div>
       <div style="color:var(--muted);font-size:12.5px;margin-bottom:12px">
-        Con esto, "Publicar en GitHub" escribe data.json directo en tu repo — sin descargar ni subir nada a mano.
+        Con esto, "Actualizar" escribe data.json directo en tu repo — sin descargar ni subir nada a mano.
         El token queda guardado solo en este navegador y viaja directo a GitHub, nunca pasa por otro servidor.
         Generalo en <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noopener">github.com/settings/tokens</a> (fine-grained, con permiso "Contents: Read and write" restringido a este repo).
       </div>
@@ -500,9 +507,10 @@ $('clearExp').addEventListener('click',()=>{if(confirm('Esto vuelve a marcar TOD
 const drop=$('drop'),dropInner=$('dropInner'),file=$('file'),replaceBtn=$('replaceBtn'),downloadJsonBtn=$('downloadJsonBtn'),publishHint=$('publishHint'),publishBtn=$('publishBtn');
 let rawRows=null;
 function openPicker(){ file.value=''; file.click(); }
-drop.addEventListener('click',e=>{ if(e.target.closest('#replaceBtn,#downloadJsonBtn,#publishBtn,#ghConfigBtn')) return; if(!drop.classList.contains('loaded')) openPicker(); });
+drop.addEventListener('click',e=>{ if(e.target.closest('#publishBtn,#cfgMenuWrap')) return; if(!drop.classList.contains('loaded')) openPicker(); });
 drop.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&!drop.classList.contains('loaded')){e.preventDefault();openPicker();}});
-replaceBtn.addEventListener('click',e=>{ e.stopPropagation(); openPicker(); });
+function closeCfgMenu(){ $('cfgMenuWrap').classList.remove('open'); }
+replaceBtn.addEventListener('click',e=>{ e.stopPropagation(); closeCfgMenu(); openPicker(); });
 ['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('drag');}));
 ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('drag');}));
 drop.addEventListener('drop',e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f)loadFile(f);});
@@ -516,15 +524,15 @@ function ghConfigured(){ const c=ghLoad(); return !!(c.owner&&c.repo&&c.branch&&
 function updatePublishUI(){
   const ok=ghConfigured();
   publishBtn.style.display=(ok && rawRows)?'':'none';
-  downloadJsonBtn.style.display=(!ok && rawRows)?'':'none';
   if(!rawRows){ publishHint.style.display='none'; return; }
   publishHint.style.display='';
   publishHint.innerHTML = ok
-    ? 'Tocá <b>"Publicar en GitHub"</b> para que este link muestre estos datos a cualquiera que lo abra.'
-    : 'Configurá la publicación (⚙ GitHub) para poder actualizar el link con un clic, o descargá <b>data.json</b> y subilo manualmente al repo (Add file → Upload files).';
+    ? 'Tocá <b>"Actualizar"</b> para que este link muestre estos datos a cualquiera que lo abra.'
+    : 'Configurá la publicación (⚙ Configuración → Configurar publicación) para poder actualizar el link con un clic, o descargá <b>data.json</b> desde el mismo menú y subilo manualmente al repo (Add file → Upload files).';
 }
 $('ghConfigBtn').addEventListener('click',e=>{
   e.stopPropagation();
+  closeCfgMenu();
   const c=ghLoad();
   $('ghOwner').value=c.owner||''; $('ghRepo').value=c.repo||''; $('ghBranch').value=c.branch||'main'; $('ghPath').value=c.path||'data.json'; $('ghToken').value=c.token||'';
   const p=$('ghConfigPanel'); p.style.display=p.style.display==='none'?'':'none';
@@ -534,7 +542,7 @@ $('ghSaveBtn').addEventListener('click',e=>{
   const cfg={owner:$('ghOwner').value.trim(),repo:$('ghRepo').value.trim(),branch:$('ghBranch').value.trim()||'main',path:$('ghPath').value.trim()||'data.json',token:$('ghToken').value.trim()};
   if(!cfg.owner||!cfg.repo||!cfg.token){ alert('Completá al menos usuario, repositorio y token.'); return; }
   ghSave(cfg); $('ghConfigPanel').style.display='none'; updatePublishUI();
-  alert('Guardado. Ya podés usar "Publicar en GitHub".');
+  alert('Guardado. Ya podés usar "Actualizar".');
 });
 $('ghForgetBtn').addEventListener('click',e=>{
   e.stopPropagation();
@@ -561,7 +569,7 @@ async function ghPublish(){
   }catch(err){
     alert('No se pudo publicar: '+(err.message||err));
   }finally{
-    publishBtn.disabled=false; publishBtn.textContent='Publicar en GitHub';
+    publishBtn.disabled=false; publishBtn.textContent='Actualizar';
   }
 }
 publishBtn.addEventListener('click',e=>{ e.stopPropagation(); ghPublish(); });
@@ -602,6 +610,7 @@ function fdatetime(dt){const d=new Date(dt);return fdate(d)+' '+String(d.getHour
 
 downloadJsonBtn.addEventListener('click',e=>{
   e.stopPropagation();
+  closeCfgMenu();
   if(!rawRows) return;
   const payload={actualizado:new Date().toISOString(),rows:rawRows};
   const blob=new Blob([JSON.stringify(payload)],{type:'application/json'});
