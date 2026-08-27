@@ -284,6 +284,7 @@ function hideErr(){$('err').classList.remove('show');}
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 
 let dateFieldLabel='Fecha de vencimiento';
+let lastExcluidasPorFechaVieja=0;
 function parsePagos(rows){
   if(!rows.length) throw new Error('El reporte está vacío.');
   const r0=rows[0];
@@ -297,6 +298,8 @@ function parsePagos(rows){
   const kRs=findKey(r0,'razón','social'), kCte=findKeyEx(r0,['pendiente','cte'],[]), kExt=findKeyEx(r0,['pendiente','ext'],[]),
         kAgr=findKey(r0,'agrupacion'),
         kY=findKey(r0,dateWord,'año'),kM=findKeyEx(r0,[dateWord,'mes'],['semana','trimestre']),kD=findKeyEx(r0,[dateWord,'día'],['semana']);
+  const FECHA_MINIMA=new Date(2025,0,1);
+  let excluidasPorFechaVieja=0;
   const map={};
   for(const r of rows){
     const razon=String(r[kRs]||'').trim(); if(!razon) continue;
@@ -307,6 +310,7 @@ function parsePagos(rows){
     const key=razon+'‖'+agr;
     const y=r[kY],mo=monthNum(r[kM]),d=r[kD];
     const fv=(y&&mo&&d)?new Date(+y,mo-1,+d):null;
+    if(fv && fv<FECHA_MINIMA){ excluidasPorFechaVieja++; continue; }
     const dias=fv?Math.max(0,daysBetween(HOY,fv)):0;
     const b=fv?bucket(dias):'+90';
     if(!map[key]) map[key]={key,rs:razon,agrupacion:agr,saldo:0,saldoUsd:0,lines:[],dvmax:0,brk:{'0-30':0,'31-60':0,'61-90':0,'+90':0},brkAny:{'0-30':0,'31-60':0,'61-90':0,'+90':0}};
@@ -333,6 +337,7 @@ function parsePagos(rows){
     o.worst = bucket(o.diasPond);
     o.lines.sort((a,b)=>b.dias-a.dias);
   });
+  lastExcluidasPorFechaVieja = excluidasPorFechaVieja;
   return map;
 }
 
@@ -612,7 +617,8 @@ function applyRows(rows,fname,metaExtra){
   collapsedGrupos=new Set(Object.values(provs).map(c=>c.agrupacion));
   const nGr=new Set(Object.values(provs).map(c=>c.agrupacion)).size;
   drop.classList.add('loaded');
-  dropInner.innerHTML=`<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg><div><span class="fname">${esc(fname)}</span> · <span class="meta">${Object.keys(provs).length} proveedores · ${nGr} agrupaci${nGr!==1?'ones':'ón'} · ${metaExtra}</span></div>`;
+  const notaExcluidas = lastExcluidasPorFechaVieja>0 ? ` · <span style="color:var(--gold)">${lastExcluidasPorFechaVieja} factura${lastExcluidasPorFechaVieja!==1?'s':''} anterior${lastExcluidasPorFechaVieja!==1?'es':''} a 01/01/2025 excluida${lastExcluidasPorFechaVieja!==1?'s':''}</span>` : '';
+  dropInner.innerHTML=`<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg><div><span class="fname">${esc(fname)}</span> · <span class="meta">${Object.keys(provs).length} proveedores · ${nGr} agrupaci${nGr!==1?'ones':'ón'} · ${metaExtra}${notaExcluidas}</span></div>`;
   replaceBtn.style.display='';
   $('cartera-body').style.display='';
   updatePublishUI();
