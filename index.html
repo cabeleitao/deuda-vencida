@@ -204,6 +204,10 @@
           <button type="button" class="mselBtn" data-key="agrup">Agrupación <span class="mselBadge" id="mselBadge-agrup"></span></button>
           <div class="mselMenu" id="mselMenu-agrup"></div>
         </div>
+        <div class="msel" data-key="moneda">
+          <button type="button" class="mselBtn" data-key="moneda">Moneda <span class="mselBadge" id="mselBadge-moneda"></span></button>
+          <div class="mselMenu" id="mselMenu-moneda"></div>
+        </div>
         <select id="fGest">
           <option value="">En gestión: todos</option>
           <option value="si">Ya en gestión</option>
@@ -219,9 +223,10 @@
               <th></th>
               <th data-k="rs">Proveedor</th>
               <th data-k="saldo" class="num">Saldo</th>
+              <th data-k="saldoUsd" class="num">USD</th>
               <th data-k="nComp" class="num">Comp.</th>
               <th data-k="worst">Peor tramo</th>
-              <th data-k="dvmax" class="num">Días máx.</th>
+              <th data-k="diasPond" class="num" title="Promedio de días vencidos, ponderado por el importe de cada factura">Días (pond.)</th>
               <th></th>
             </tr>
           </thead>
@@ -258,7 +263,7 @@ const $=id=>document.getElementById(id);
 let provs={};
 let sortKey='saldo', sortDir=-1;
 let collapsedGrupos=new Set();
-let selAging=new Set(), selAgrup=new Set();
+let selAging=new Set(), selAgrup=new Set(), selMoneda=new Set();
 let state=load();
 
 function load(){ try{const s=JSON.parse(localStorage.getItem(LSKEY)); return s&&s.casos?{casos:s.casos}:{casos:{}};}catch(e){return {casos:{}};} }
@@ -281,13 +286,15 @@ function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','
 function parsePagos(rows){
   if(!rows.length) throw new Error('El reporte está vacío.');
   const r0=rows[0];
+  // Fecha contable si el reporte la trae; si no, cae a Fecha de vencimiento (compatibilidad con reportes viejos).
+  const dateWord = findKeyEx(r0,['contable','año'],[]) ? 'contable' : 'vencimiento';
   const specs=[['Razón social',['razón','social']],['Total pendiente (CTE)',['pendiente','cte']],['AGRUPACION',['agrupacion']],
-    ['Fecha de vencimiento - Año',['vencimiento','año']],['Fecha de vencimiento - Mes',['vencimiento','mes'],['trimestre']],['Fecha de vencimiento - Día',['vencimiento','día'],['semana']]];
+    ['Fecha '+dateWord+' - Año',[dateWord,'año']],['Fecha '+dateWord+' - Mes',[dateWord,'mes'],['trimestre']],['Fecha '+dateWord+' - Día',[dateWord,'día'],['semana']]];
   const falt=specs.filter(s=>!findKeyEx(r0,s[1],s[2]||[])).map(s=>s[0]);
   if(falt.length) throw new Error('Al reporte le falta'+(falt.length>1?'n':'')+' '+falt.length+' columna'+(falt.length>1?'s':'')+':\n'+falt.map(f=>'  •  '+f).join('\n')+'\n\nVolvé a exportarlo desde Tango con esas columnas.');
   const kRs=findKey(r0,'razón','social'), kCte=findKeyEx(r0,['pendiente','cte'],[]), kExt=findKeyEx(r0,['pendiente','ext'],[]),
         kAgr=findKey(r0,'agrupacion'),
-        kY=findKey(r0,'vencimiento','año'),kM=findKeyEx(r0,['vencimiento','mes'],['semana','trimestre']),kD=findKeyEx(r0,['vencimiento','día'],['semana']);
+        kY=findKey(r0,dateWord,'año'),kM=findKeyEx(r0,[dateWord,'mes'],['semana','trimestre']),kD=findKeyEx(r0,[dateWord,'día'],['semana']);
   const map={};
   for(const r of rows){
     const razon=String(r[kRs]||'').trim(); if(!razon) continue;
@@ -300,15 +307,28 @@ function parsePagos(rows){
     const fv=(y&&mo&&d)?new Date(+y,mo-1,+d):null;
     const dias=fv?Math.max(0,daysBetween(HOY,fv)):0;
     const b=fv?bucket(dias):'+90';
-    if(!map[key]) map[key]={key,rs:razon,agrupacion:agr,saldo:0,saldoUsd:0,lines:[],dvmax:0,brk:{'0-30':0,'31-60':0,'61-90':0,'+90':0}};
+    if(!map[key]) map[key]={key,rs:razon,agrupacion:agr,saldo:0,saldoUsd:0,lines:[],dvmax:0,brk:{'0-30':0,'31-60':0,'61-90':0,'+90':0},brkAny:{'0-30':0,'31-60':0,'61-90':0,'+90':0}};
     const o=map[key];
     if(moneda==='ARS'){ o.saldo+=imp; o.brk[b]+=imp; } else { o.saldoUsd+=imp; }
+    o.brkAny[b]++;
     o.dvmax=Math.max(o.dvmax,dias);
     o.lines.push({fv,imp,dias,b,moneda});
   }
   Object.values(map).forEach(o=>{
     o.nComp=o.lines.length;
-    o.worst=['+90','61-90','31-60','0-30'].find(b=>o.brk[b]>0)||'0-30';
+    // Plazo ponderado por peso de cada factura en el total (una factura chica y vieja no debe
+    // "contaminar" el indicador de un proveedor cuya deuda real es reciente y grande).
+    // Se pondera dentro de la moneda que domina el saldo del proveedor (ARS si tiene, si no USD),
+    // porque pesos y dólares no se pueden promediar juntos sin un tipo de cambio.
+    const monedaDom = o.saldo>0 ? 'ARS' : (o.saldoUsd>0 ? 'USD' : null);
+    const base = o.saldo>0 ? o.saldo : o.saldoUsd;
+    if(monedaDom && base>0){
+      const suma = o.lines.filter(l=>l.moneda===monedaDom).reduce((s,l)=>s+l.imp*l.dias,0);
+      o.diasPond = Math.round(suma/base);
+    } else {
+      o.diasPond = 0;
+    }
+    o.worst = bucket(o.diasPond);
     o.lines.sort((a,b)=>b.dias-a.dias);
   });
   return map;
@@ -320,7 +340,7 @@ function reconcile(){
   save();
 }
 function kpi(n,l,cls){return `<div class="kpi"><div class="l">${l}</div><div class="n ${cls}">${n}</div></div>`;}
-function selSetFor(key){return key==='aging'?selAging:selAgrup;}
+function selSetFor(key){return key==='aging'?selAging:key==='agrup'?selAgrup:selMoneda;}
 function updateMselBadge(key){
   const set=selSetFor(key), b=$('mselBadge-'+key);
   if(set.size){ b.textContent=set.size; b.classList.add('show'); } else { b.textContent=''; b.classList.remove('show'); }
@@ -337,13 +357,15 @@ function populateFilters(){
   const agrs=[...new Set(arr.map(c=>c.agrupacion))].sort((a,b)=>a.localeCompare(b,'es'));
   buildMsel('aging',AG.map(a=>a[0]));
   buildMsel('agrup',agrs);
+  buildMsel('moneda',['ARS','USD']);
 }
 function getFiltered(){
   const q=norm($('search').value), fg=$('fGest').value;
   return Object.values(provs).filter(c=>{
     if(q&&!norm(c.rs).includes(q)) return false;
-    if(selAging.size&&![...selAging].some(b=>c.brk[b]>0)) return false;
+    if(selAging.size&&![...selAging].some(b=>c.brkAny[b]>0)) return false;
     if(selAgrup.size&&!selAgrup.has(c.agrupacion)) return false;
+    if(selMoneda.size&&!((selMoneda.has('ARS')&&c.saldo>0)||(selMoneda.has('USD')&&c.saldoUsd>0))) return false;
     if(fg==='si'&&!state.casos[c.key]) return false;
     if(fg==='no'&&state.casos[c.key]) return false;
     return true;
@@ -375,11 +397,12 @@ function renderCartTable(){
 
   $('tcount').textContent=arr.length+' proveedor'+(arr.length!==1?'es':'')+(grupNames.length>1?' · '+grupNames.length+' agrupaciones':'');
 
-  if(!arr.length){ $('cartBody').innerHTML=`<tr><td colspan="7" class="empty">Sin resultados</td></tr>`; return; }
+  if(!arr.length){ $('cartBody').innerHTML=`<tr><td colspan="8" class="empty">Sin resultados</td></tr>`; return; }
 
   $('cartBody').innerHTML = grupNames.map(gr=>{
     const list=groups.get(gr);
     const subtotal=list.reduce((s,c)=>s+c.saldo,0);
+    const subtotalUsd=list.reduce((s,c)=>s+c.saldoUsd,0);
     const collapsed=collapsedGrupos.has(gr);
     const vbrk={'0-30':0,'31-60':0,'61-90':0,'+90':0}; list.forEach(c=>AG.forEach(a=>vbrk[a[0]]+=c.brk[a[0]]));
     const brkHtml=collapsed?'':AG.map(a=>vbrk[a[0]]>0?`<span class="pill b${agIdx(a[0])}">${a[0]}: ${money(vbrk[a[0]])}</span>`:'').join('');
@@ -388,10 +411,10 @@ function renderCartTable(){
       const btn=inG?`<button class="btn ingest">✓ en gestión</button>`:`<button class="btn gest" data-add="${esc(c.key)}">→ Gestión</button>`;
       const detSub=AG.map(a=>c.brk[a[0]]>0?`<span class="pill b${agIdx(a[0])}">${a[0]}: ${money(c.brk[a[0]])}</span>`:'').join('')+(c.saldoUsd?`<span class="pill usd">USD ${Math.round(c.saldoUsd).toLocaleString('es-AR')}</span>`:'');
       const det=c.lines.map(l=>`<tr><td>${l.fv?fdate(l.fv):'—'}</td><td class="num">${l.moneda==='USD'?'US$'+Math.round(l.imp).toLocaleString('es-AR'):money(l.imp)}</td><td class="num">${l.dias}</td><td><span class="pill b${agIdx(l.b)}">${l.b}</span></td></tr>`).join('');
-      return `<tr class="crow"><td><span class="caret" data-toggle="${esc(c.key)}">▶</span></td><td class="rs">${esc(c.rs)}</td><td class="num">${money(c.saldo)}</td><td class="num">${c.nComp}</td><td><span class="pill b${bi}">${c.worst}</span></td><td class="num">${c.dvmax}</td><td>${btn}</td></tr>
-      <tr class="detail" id="det-${esc(c.key)}" style="display:none"><td colspan="7"><div class="inner"><div class="detailSub">${detSub}</div><table><thead><tr><th>Vencimiento</th><th class="num">Importe</th><th class="num">Días</th><th>Aging</th></tr></thead><tbody>${det}</tbody></table></div></td></tr>`;
+      return `<tr class="crow"><td><span class="caret" data-toggle="${esc(c.key)}">▶</span></td><td class="rs">${esc(c.rs)}</td><td class="num">${money(c.saldo)}</td><td class="num">${c.saldoUsd?'US$&nbsp;'+Math.round(c.saldoUsd).toLocaleString('es-AR'):'<span style="color:var(--muted)">—</span>'}</td><td class="num">${c.nComp}</td><td><span class="pill b${bi}">${c.worst}</span></td><td class="num" title="Días máx. real: ${c.dvmax}">${c.diasPond}</td><td>${btn}</td></tr>
+      <tr class="detail" id="det-${esc(c.key)}" style="display:none"><td colspan="8"><div class="inner"><div class="detailSub">${detSub}</div><table><thead><tr><th>Vencimiento</th><th class="num">Importe</th><th class="num">Días</th><th>Aging</th></tr></thead><tbody>${det}</tbody></table></div></td></tr>`;
     }).join('');
-    return `<tr class="groupRow" data-toggle-group="${esc(gr)}"><td colspan="7"><span class="caret groupCaret">${collapsed?'▶':'▼'}</span><span class="groupName">${esc(gr)}</span><span class="groupMeta">${list.length} proveedor${list.length!==1?'es':''} · ${money(subtotal)}</span><span class="groupBrk">${brkHtml}</span></td></tr>${rows}`;
+    return `<tr class="groupRow" data-toggle-group="${esc(gr)}"><td colspan="2"><span class="caret groupCaret">${collapsed?'▶':'▼'}</span><span class="groupName">${esc(gr)}</span><span class="groupMeta">${list.length} proveedor${list.length!==1?'es':''}</span></td><td class="num" style="font-weight:800">${money(subtotal)}</td><td class="num" style="font-weight:800">${subtotalUsd?'US$&nbsp;'+Math.round(subtotalUsd).toLocaleString('es-AR'):'<span style="color:var(--muted);font-weight:400">—</span>'}</td><td colspan="4"><span class="groupBrk">${brkHtml}</span></td></tr>${rows}`;
   }).join('');
 }
 
@@ -579,7 +602,7 @@ function applyRows(rows,fname,metaExtra){
   if(!Object.keys(provs).length) throw new Error('No se encontraron proveedores en el archivo.');
   rawRows=rows;
   reconcile();
-  selAging=new Set(); selAgrup=new Set();
+  selAging=new Set(); selAgrup=new Set(); selMoneda=new Set();
   populateFilters();
   collapsedGrupos=new Set(Object.values(provs).map(c=>c.agrupacion));
   const nGr=new Set(Object.values(provs).map(c=>c.agrupacion)).size;
